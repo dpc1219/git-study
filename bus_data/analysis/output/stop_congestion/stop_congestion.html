@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>정류장 혼잡도</title>
+<style>
+:root{--bg:#fff;--fg:#1f2430;--muted:#6b7280;--line:#e5e7eb;--card:#f8fafc;--accent:#2563eb;
+--c0:#eef2ff;--c1:#c7d2fe;--c2:#818cf8;--c3:#4f46e5;--c4:#312e81}
+@media(prefers-color-scheme:dark){:root{--bg:#12141a;--fg:#e6e8ee;--muted:#9aa3b2;--line:#2a2f3a;--card:#1a1d26;--accent:#60a5fa;
+--c0:#1e2235;--c1:#2f3a6b;--c2:#4c5bb0;--c3:#7c8cf0;--c4:#c7d0ff}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,"Malgun Gothic",sans-serif}
+main{max-width:1100px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:20px;margin:0 0 4px}.sub{color:var(--muted);margin:0 0 16px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.kpi b{display:block;font-size:20px}.kpi span{color:var(--muted);font-size:12px}
+.ctrl{display:flex;gap:12px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.ctrl input[type=range]{flex:1;min-width:180px}.ctrl output{font-weight:600;min-width:90px}
+.grid{display:grid;grid-template-columns:3fr 2fr;gap:14px}@media(max-width:760px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px}
+.card h2{font-size:14px;margin:0 0 8px}svg{width:100%;height:auto;display:block}
+text{fill:var(--fg);font-size:11px}.mut{fill:var(--muted)}
+.rank{display:grid;grid-template-columns:90px 1fr 36px;gap:6px;align-items:center;margin:3px 0;cursor:pointer}
+.rank i{display:block;height:10px;border-radius:3px;background:var(--c3)}.rank.sel{font-weight:700}
+.legend{display:flex;gap:4px;align-items:center;color:var(--muted);font-size:12px;margin-top:8px}
+.legend s{width:22px;height:10px;display:inline-block;border-radius:2px}
+#tip{position:fixed;pointer-events:none;background:var(--fg);color:var(--bg);padding:4px 8px;border-radius:6px;font-size:12px;display:none;z-index:9}
+</style></head><body><main>
+<h1>정류장 혼잡도</h1>
+<p class="sub">혼잡도 = 정류장·시간대별 이용량(승차 + 하차). 하차는 태그된 통행만 집계. 기준: 통행 5,000건, 2026-10-12 ~ 2026-10-12</p>
+<div class="kpis" id="kpis"></div>
+<div class="ctrl"><label for="hour">시간대</label><input id="hour" type="range" min="0" max="0" value="0"><output id="hourOut"></output></div>
+<div class="grid">
+ <div class="card"><h2>정류장 위치별 혼잡 <span class="mut" style="font-weight:400">(원 크기·색 = 이용량)</span></h2><svg id="map" viewBox="0 0 560 420" role="img" aria-label="정류장 위치별 혼잡도"></svg>
+  <div class="legend" id="legend"></div></div>
+ <div class="card"><h2>혼잡 순위</h2><div id="rank"></div></div>
+</div>
+<div class="card" style="margin-top:14px"><h2>정류장 × 시간대 히트맵 <span class="mut" style="font-weight:400">(행 클릭 = 정류장 선택)</span></h2><svg id="heat" role="img" aria-label="정류장 시간대 히트맵"></svg></div>
+</main><div id="tip"></div>
+<script>
+const D={"hours": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23], "stops": [{"id": "ST0002", "name": "중앙시장", "lat": 37.515832, "lon": 127.093502, "v": [2, 0, 0, 0, 0, 4, 17, 40, 56, 33, 20, 16, 24, 16, 14, 37, 34, 37, 61, 49, 31, 27, 7, 9]}, {"id": "ST0003", "name": "역전광장", "lat": 37.57879, "lon": 126.965165, "v": [0, 0, 0, 0, 0, 0, 3, 15, 23, 11, 8, 10, 9, 9, 5, 6, 14, 17, 18, 6, 7, 7, 6, 2]}, {"id": "ST0004", "name": "시외버스터미널", "lat": 37.554605, "lon": 126.974092, "v": [0, 0, 0, 0, 0, 4, 7, 38, 36, 18, 16, 16, 20, 14, 10, 22, 25, 19, 44, 29, 24, 15, 14, 5]}, {"id": "ST0005", "name": "대학교정문", "lat": 37.464127, "lon": 126.993911, "v": [0, 0, 0, 0, 0, 1, 1, 11, 9, 4, 10, 3, 8, 2, 8, 4, 12, 10, 13, 9, 4, 5, 2, 2]}, {"id": "ST0006", "name": "종합병원", "lat": 37.596343, "lon": 126.937894, "v": [1, 0, 0, 0, 0, 4, 11, 29, 36, 24, 15, 15, 19, 14, 11, 17, 22, 37, 24, 23, 23, 13, 5, 7]}, {"id": "ST0007", "name": "구청", "lat": 37.564171, "lon": 126.925984, "v": [0, 0, 0, 0, 0, 2, 8, 13, 20, 12, 9, 11, 10, 7, 3, 14, 11, 13, 18, 18, 9, 5, 3, 1]}, {"id": "ST0008", "name": "문화예술회관", "lat": 37.56791, "lon": 126.995141, "v": [0, 0, 0, 0, 0, 5, 12, 32, 40, 27, 10, 25, 22, 7, 15, 22, 19, 24, 30, 21, 22, 10, 14, 3]}, {"id": "ST0009", "name": "체육공원", "lat": 37.469217, "lon": 126.945382, "v": [0, 0, 0, 0, 0, 4, 10, 42, 46, 25, 19, 16, 12, 16, 16, 22, 23, 34, 31, 29, 25, 20, 15, 3]}, {"id": "ST0010", "name": "신도시입구", "lat": 37.517558, "lon": 127.033963, "v": [0, 0, 0, 0, 0, 9, 22, 67, 83, 51, 31, 26, 33, 35, 26, 34, 29, 73, 71, 52, 36, 32, 18, 11]}, {"id": "ST0011", "name": "산업단지", "lat": 37.50562, "lon": 126.98743, "v": [0, 0, 0, 0, 0, 8, 19, 71, 73, 44, 37, 35, 34, 37, 29, 44, 36, 50, 75, 62, 38, 35, 28, 7]}, {"id": "ST0012", "name": "물류센터", "lat": 37.589015, "lon": 127.066536, "v": [0, 0, 0, 0, 0, 2, 8, 10, 24, 13, 3, 9, 16, 5, 5, 11, 16, 16, 18, 13, 20, 13, 10, 1]}, {"id": "ST0013", "name": "아파트단지", "lat": 37.54658, "lon": 127.040053, "v": [0, 0, 0, 0, 0, 11, 24, 68, 82, 38, 29, 34, 46, 26, 35, 32, 42, 60, 67, 54, 46, 27, 30, 15]}, {"id": "ST0014", "name": "초등학교", "lat": 37.573414, "lon": 126.962473, "v": [0, 0, 0, 0, 0, 1, 10, 29, 35, 18, 17, 9, 13, 14, 16, 15, 22, 21, 26, 21, 11, 12, 13, 2]}, {"id": "ST0015", "name": "도서관", "lat": 37.516512, "lon": 127.066452, "v": [1, 0, 0, 0, 0, 3, 6, 26, 41, 24, 17, 11, 16, 12, 10, 20, 23, 21, 35, 26, 21, 15, 10, 3]}, {"id": "ST0016", "name": "법원", "lat": 37.484086, "lon": 127.060953, "v": [0, 0, 0, 0, 0, 2, 4, 9, 12, 11, 4, 4, 3, 5, 5, 7, 9, 7, 19, 12, 6, 7, 2, 0]}, {"id": "ST0017", "name": "세무서", "lat": 37.533188, "lon": 126.977496, "v": [0, 0, 0, 0, 0, 2, 5, 21, 30, 18, 7, 10, 11, 10, 11, 13, 22, 30, 27, 18, 14, 16, 16, 3]}, {"id": "ST0019", "name": "호수공원", "lat": 37.574145, "lon": 127.036499, "v": [0, 0, 0, 0, 0, 2, 12, 30, 36, 17, 20, 18, 18, 11, 16, 29, 22, 24, 43, 30, 23, 16, 11, 6]}, {"id": "ST0021", "name": "농협", "lat": 37.563713, "lon": 126.939982, "v": [0, 0, 0, 0, 0, 4, 5, 18, 22, 8, 9, 6, 7, 7, 7, 8, 11, 19, 16, 18, 6, 11, 1, 1]}, {"id": "ST0022", "name": "소방서", "lat": 37.503179, "lon": 126.901472, "v": [0, 0, 0, 0, 0, 5, 11, 23, 31, 16, 16, 8, 14, 12, 12, 15, 19, 17, 23, 18, 22, 14, 9, 4]}, {"id": "ST0024", "name": "공영주차장", "lat": 37.583968, "lon": 127.03297, "v": [1, 0, 0, 0, 0, 5, 11, 35, 44, 30, 17, 18, 26, 15, 19, 25, 31, 30, 49, 28, 27, 18, 13, 7]}, {"id": "ST0025", "name": "전통시장", "lat": 37.566758, "lon": 127.041033, "v": [1, 0, 0, 0, 0, 10, 22, 74, 84, 48, 42, 38, 44, 30, 33, 43, 57, 62, 94, 68, 44, 30, 19, 15]}, {"id": "ST0026", "name": "환승센터", "lat": 37.479196, "lon": 127.056146, "v": [0, 0, 0, 0, 0, 7, 17, 44, 41, 24, 24, 19, 26, 24, 25, 24, 30, 38, 41, 35, 28, 16, 15, 5]}, {"id": "ST0027", "name": "주민센터", "lat": 37.520008, "lon": 126.991783, "v": [0, 0, 0, 0, 0, 1, 10, 21, 32, 14, 14, 9, 15, 12, 11, 15, 16, 17, 27, 19, 23, 8, 4, 5]}, {"id": "ST0028", "name": "보건소", "lat": 37.456571, "lon": 127.013748, "v": [0, 0, 0, 0, 0, 0, 4, 13, 17, 8, 2, 4, 9, 8, 5, 5, 5, 5, 11, 7, 3, 7, 4, 0]}, {"id": "ST0029", "name": "과학관", "lat": 37.473143, "lon": 126.927959, "v": [0, 0, 0, 0, 0, 2, 11, 24, 29, 18, 14, 15, 9, 9, 13, 16, 17, 18, 34, 19, 22, 12, 10, 4]}, {"id": "ST0030", "name": "박물관", "lat": 37.552457, "lon": 126.922906, "v": [0, 0, 0, 0, 0, 5, 12, 38, 46, 31, 19, 16, 19, 13, 13, 16, 21, 26, 35, 21, 21, 19, 13, 1]}]};
+const hours=D.hours,stops=D.stops;let hi=0,selId=null;
+const $=s=>document.querySelector(s),NS="http://www.w3.org/2000/svg";
+const el=(t,a,p)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);p&&p.appendChild(e);return e};
+const maxAll=Math.max(...stops.flatMap(s=>s.v));
+const colors=['--c0','--c1','--c2','--c3','--c4'];
+const cls=v=>v<=0?0:Math.min(4,1+Math.floor(3.999*v/maxAll));
+const css=n=>`var(${colors[n]})`;
+const tip=$('#tip');
+function showTip(e,t){tip.textContent=t;tip.style.display='block';tip.style.left=e.clientX+12+'px';tip.style.top=e.clientY+12+'px'}
+function hideTip(){tip.style.display='none'}
+const fmt=h=>String(h).padStart(2,'0')+':00~'+String(h).padStart(2,'0')+':59';
+const sl=$('#hour');sl.max=hours.length-1;
+sl.addEventListener('input',()=>{hi=+sl.value;render()});
+// KPI
+const tot=stops.map(s=>s.v.reduce((a,b)=>a+b,0));
+const hourTot=hours.map((_,i)=>stops.reduce((a,s)=>a+s.v[i],0));
+const pk=hourTot.indexOf(Math.max(...hourTot));
+const topStop=stops[tot.indexOf(Math.max(...tot))];
+$('#kpis').innerHTML=[['정류장 수',stops.length],['전체 이용량',tot.reduce((a,b)=>a+b,0).toLocaleString()],
+ ['가장 붐비는 시간대',fmt(hours[pk])],["종일 최다 정류장",topStop.name]].map(([k,v])=>`<div class="kpi"><b>${v}</b><span>${k}</span></div>`).join('');
+// legend
+$('#legend').innerHTML='낮음 '+[0,1,2,3,4].map(n=>`<s style="background:${css(n)}"></s>`).join('')+' 높음 (최대 '+maxAll+'건)';
+// map
+const lats=stops.map(s=>s.lat),lons=stops.map(s=>s.lon);
+const [la0,la1,lo0,lo1]=[Math.min(...lats),Math.max(...lats),Math.min(...lons),Math.max(...lons)];
+const X=lo=>40+(lo-lo0)/(lo1-lo0||1)*480,Y=la=>380-(la-la0)/(la1-la0||1)*340;
+function render(){
+ hideTip();$('#hourOut').textContent=fmt(hours[hi]);sl.value=hi;
+ const m=$('#map');m.innerHTML='';
+ stops.forEach(s=>{const v=s.v[hi],g=el('g',{style:'cursor:pointer'},m);
+  const c=el('circle',{cx:X(s.lon),cy:Y(s.lat),r:6+14*Math.sqrt(v/maxAll),fill:css(cls(v)),stroke:s.id===selId?'var(--accent)':'var(--muted)','stroke-width':s.id===selId?3:1,'fill-opacity':.85},g);
+  el('text',{x:X(s.lon),y:Y(s.lat)-10-14*Math.sqrt(v/maxAll),'text-anchor':'middle'},g).textContent=s.name;
+  g.onmousemove=e=>showTip(e,`${s.name} · ${v}건`);g.onmouseleave=hideTip;g.onclick=()=>{selId=selId===s.id?null:s.id;render()}});
+ el('text',{x:40,y:410,class:'mut'},m).textContent='← 서쪽   동쪽 →  (위도·경도 기준 배치)';
+ const r=[...stops].sort((a,b)=>b.v[hi]-a.v[hi]).slice(0,10);
+ $('#rank').innerHTML=r.map(s=>`<div class="rank${s.id===selId?' sel':''}" data-id="${s.id}"><span>${s.name}</span><i style="width:${100*s.v[hi]/(r[0].v[hi]||1)}%"></i><span>${s.v[hi]}</span></div>`).join('');
+ document.querySelectorAll('.rank').forEach(n=>n.onclick=()=>{selId=selId===n.dataset.id?null:n.dataset.id;render()});
+ heat();
+}
+function heat(){
+ const h=$('#heat'),rowH=18,lw=100,cw=Math.max(18,Math.floor(900/hours.length)),W=lw+cw*hours.length+10,H=24+rowH*stops.length;
+ h.setAttribute('viewBox',`0 0 ${W} ${H}`);h.innerHTML='';
+ hours.forEach((hr,i)=>{el('text',{x:lw+cw*i+cw/2,y:12,'text-anchor':'middle',class:i===hi?'':'mut'},h).textContent=hr});
+ const order=[...stops].sort((a,b)=>b.v.reduce((x,y)=>x+y,0)-a.v.reduce((x,y)=>x+y,0));
+ order.forEach((s,r)=>{const y=24+r*rowH;
+  el('text',{x:lw-6,y:y+13,'text-anchor':'end',style:s.id===selId?'font-weight:700':''},h).textContent=s.name;
+  s.v.forEach((v,i)=>{const c=el('rect',{x:lw+cw*i+1,y:y+1,width:cw-2,height:rowH-2,rx:2,fill:css(cls(v)),stroke:i===hi?'var(--accent)':(s.id===selId?'var(--muted)':'none')},h);
+   c.onmousemove=e=>showTip(e,`${s.name} ${fmt(hours[i])} · ${v}건`);c.onmouseleave=hideTip;
+   c.onclick=()=>{hi=i;selId=s.id;render()}})});
+}
+render();
+</script></body></html>
